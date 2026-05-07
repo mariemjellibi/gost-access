@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0.1
+    container_name: keycloak
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    command: start-dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  ghost-scanner:
+    build: .
+    container_name: ghost-scanner
+    ports:
+      - "8501:8501"
+    environment:
+      KEYCLOAK_URL: http://keycloak:8080
+      KEYCLOAK_REALM: company-demo
+      KEYCLOAK_CLIENT_ID: admin-cli
+      KEYCLOAK_CLIENT_SECRET: admin
+      GROQ_API_KEY: ${GROQ_API_KEY}
+    depends_on:
+      keycloak:
+        condition: service_healthy
