@@ -72,56 +72,54 @@ jobs:
           safety check --output text || true
 
   iam-ghost-scan:
-    name: Scheduled IAM Ghost Scan + Auto Remediation
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    permissions:
-      issues: write
-    env:
-      KEYCLOAK_URL: http://localhost:8080
-      KEYCLOAK_REALM: company-demo
-      KEYCLOAK_CLIENT_ID: admin-cli
-      KEYCLOAK_CLIENT_SECRET: admin
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GITHUB_REPO: ${{ github.repository }}
-    steps:
-      - uses: actions/checkout@v4
+      name: Scheduled IAM Ghost Scan + Auto Remediation
+      runs-on: ubuntu-latest
+      if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      permissions:
+        issues: write
+      env:
+        KEYCLOAK_URL: http://localhost:8080
+        KEYCLOAK_REALM: company-demo
+        KEYCLOAK_ADMIN_USER: admin
+        KEYCLOAK_ADMIN_PASSWORD: admin
+        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_REPO: ${{ github.repository }}
+      steps:
+        - uses: actions/checkout@v4
 
-      - name: Start Keycloak
-        run: |
-          docker run -d --name keycloak \
-            -p 8080:8080 \
-            -e KEYCLOAK_ADMIN=admin \
-            -e KEYCLOAK_ADMIN_PASSWORD=admin \
-            quay.io/keycloak/keycloak:24.0.1 start-dev
-          sleep 10
-          echo "--- Docker logs ---"
-          docker logs keycloak
+        - name: Start Keycloak
+          run: |
+            docker run -d --name keycloak \
+              -p 8080:8080 \
+              -e KEYCLOAK_ADMIN=admin \
+              -e KEYCLOAK_ADMIN_PASSWORD=admin \
+              quay.io/keycloak/keycloak:24.0.1 start-dev
+            # Allow JVM to boot
+            sleep 30
 
-          
-      - name: Wait for Keycloak
-        run: |
-          echo "Waiting for Keycloak..."
-          for i in {1..60}; do
-            if curl -sf http://localhost:8080/health/ready; then
-              echo "Keycloak is ready!"
-              break
-            fi
-            echo "Attempt $i... waiting 15 seconds"
-            sleep 15
-          done
+        - name: Wait for Keycloak
+          run: |
+            echo "Waiting for Keycloak to become available..."
+            for i in {1..60}; do
+              if curl -sf http://localhost:8080/realms/master; then
+                echo "Keycloak is responding!"
+                break
+              fi
+              echo "Attempt $i... waiting 10 seconds"
+              sleep 10
+            done
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+        - name: Set up Python
+          uses: actions/setup-python@v5
+          with:
+            python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+        - name: Install dependencies
+          run: pip install -r requirements.txt
 
-      - name: Populate Keycloak
-        run: python3 populate.py
+        - name: Populate Keycloak
+          run: python3 populate.py
 
-      - name: Run Ghost Scanner and create GitHub Issues
-        run: python3 create_issues.py
+        - name: Run Ghost Scanner and create GitHub Issues
+          run: python3 create_issues.py
