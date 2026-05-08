@@ -95,14 +95,21 @@ jobs:
             -e KEYCLOAK_ADMIN=admin \
             -e KEYCLOAK_ADMIN_PASSWORD=admin \
             quay.io/keycloak/keycloak:24.0.1 start-dev
+          sleep 10
+          echo "--- Docker logs ---"
+          docker logs keycloak
 
+          
       - name: Wait for Keycloak
         run: |
           echo "Waiting for Keycloak..."
-          for i in {1..30}; do
-            curl -sf http://localhost:8080/health/ready && echo "Ready!" && break
-            echo "Attempt $i..."
-            sleep 10
+          for i in {1..60}; do
+            if curl -sf http://localhost:8080/health/ready; then
+              echo "Keycloak is ready!"
+              break
+            fi
+            echo "Attempt $i... waiting 15 seconds"
+            sleep 15
           done
 
       - name: Set up Python
