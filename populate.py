@@ -1,8 +1,8 @@
+import os
 import requests
-import random
 from datetime import datetime, timezone, timedelta
 
-KEYCLOAK_URL = "http://localhost:8080"
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
 REALM = "company-demo"
 
 def get_token():
@@ -15,10 +15,18 @@ def get_token():
     r.raise_for_status()
     return r.json()["access_token"]
 
+def create_realm(token):
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    r = requests.post(f"{KEYCLOAK_URL}/admin/realms", headers=headers,
+                      json={"realm": REALM, "enabled": True})
+    if r.status_code in [201, 409]:
+        print(f"  Realm '{REALM}' ready")
+    else:
+        r.raise_for_status()
+
 def create_user(token, username, days_ago=None, roles=[]):
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    
-    # Calculate fake createdTimestamp
+
     if days_ago:
         past = datetime.now(timezone.utc) - timedelta(days=days_ago)
         created_ts = int(past.timestamp() * 1000)
@@ -52,8 +60,9 @@ def create_user(token, username, days_ago=None, roles=[]):
                                  headers=headers)
         if role_resp.status_code == 200:
             role = role_resp.json()
-            requests.post(f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/{user_id}/role-mappings/realm",
-                          headers=headers, json=[role])
+            requests.post(
+                f"{KEYCLOAK_URL}/admin/realms/{REALM}/users/{user_id}/role-mappings/realm",
+                headers=headers, json=[role])
 
 # ── GHOST USERS (will be detected) ──────────────────────────────
 ghosts = [
@@ -64,7 +73,7 @@ ghosts = [
     ("intern.chen",     90,  []),
 ]
 
-# ── ACTIVE USERS (should NOT be detected) ───────────────────────
+# ── ACTIVE USERS (should NOT be detected) ────────────────────────
 active = [
     ("alice.dev",       5,  []),
     ("bob.smith",       2,  []),
@@ -88,7 +97,11 @@ active = [
     ("talia.product",   1,  []),
 ]
 
-print("Creating ghost users...")
+print("Setting up Keycloak realm...")
+token = get_token()
+create_realm(token)
+
+print("\nCreating ghost users...")
 token = get_token()
 for username, days, roles in ghosts:
     create_user(token, username, days_ago=days, roles=roles)

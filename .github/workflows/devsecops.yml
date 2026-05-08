@@ -76,6 +76,21 @@ jobs:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     permissions:
       issues: write
+
+    services:
+      keycloak:
+        image: quay.io/keycloak/keycloak:24.0.1
+        env:
+          KEYCLOAK_ADMIN: admin
+          KEYCLOAK_ADMIN_PASSWORD: admin
+        ports:
+          - 8080:8080
+        options: >-
+          --health-cmd "curl -f http://localhost:8080/health/ready || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -84,12 +99,24 @@ jobs:
           python-version: '3.11'
       - name: Install dependencies
         run: pip install -r requirements.txt
-      - name: Run Ghost Scanner
+      - name: Wait for Keycloak
+        run: |
+          echo "Waiting for Keycloak to be ready..."
+          for i in {1..30}; do
+            curl -sf http://localhost:8080/health/ready && echo "Keycloak is up" && break
+            echo "Attempt $i — waiting..."
+            sleep 5
+          done
+      - name: Populate Keycloak with ghost users
         env:
-          KEYCLOAK_URL: ${{ secrets.KEYCLOAK_URL }}
-          KEYCLOAK_REALM: ${{ secrets.KEYCLOAK_REALM }}
-          KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
-          KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+          KEYCLOAK_URL: http://localhost:8080
+        run: python3 populate.py
+      - name: Run Ghost Scanner and create GitHub Issues
+        env:
+          KEYCLOAK_URL: http://localhost:8080
+          KEYCLOAK_REALM: company-demo
+          KEYCLOAK_CLIENT_ID: admin-cli
+          KEYCLOAK_CLIENT_SECRET: admin
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPO: ${{ github.repository }}
