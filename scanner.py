@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 
 load_dotenv()
 
-KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL", "http://localhost:8080")
 REALM = os.getenv("KEYCLOAK_REALM")
 
 # Simulated creation dates for ghost users (days ago)
