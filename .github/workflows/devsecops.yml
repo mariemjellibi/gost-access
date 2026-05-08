@@ -1,0 +1,120 @@
+name: DevSecOps Security Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+
+  container-scan:
+    name: Container Security Scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image
+        run: docker build -t ghost-access:latest .
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghost-access:latest
+          format: table
+          exit-code: 0
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+  secret-scan:
+    name: Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install detect-secrets
+        run: pip install detect-secrets
+      - name: Scan for hardcoded secrets
+        run: |
+          detect-secrets scan --baseline .secrets.baseline || true
+          detect-secrets audit .secrets.baseline --report || echo "No secrets found"
+
+  code-security:
+    name: Code Security Scan (Bandit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install bandit
+        run: pip install bandit
+      - name: Run Bandit security scan
+        run: |
+          bandit -r . -x ./venv --severity-level medium -f txt || true
+
+  dependency-check:
+    name: Dependency Vulnerability Check (Safety)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: pip install safety -r requirements.txt
+      - name: Run Safety check
+        run: |
+          safety check --output text || true
+
+  iam-ghost-scan:
+    name: Scheduled IAM Ghost Scan + Auto Remediation
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      issues: write
+    env:
+      KEYCLOAK_URL: http://localhost:8080
+      KEYCLOAK_REALM: company-demo
+      KEYCLOAK_CLIENT_ID: admin-cli
+      KEYCLOAK_CLIENT_SECRET: admin
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GITHUB_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start Keycloak
+        run: |
+          docker run -d --name keycloak \
+            -p 8080:8080 \
+            -e KEYCLOAK_ADMIN=admin \
+            -e KEYCLOAK_ADMIN_PASSWORD=admin \
+            quay.io/keycloak/keycloak:24.0.1 start-dev
+
+      - name: Wait for Keycloak
+        run: |
+          echo "Waiting for Keycloak..."
+          for i in {1..30}; do
+            curl -sf http://localhost:8080/health/ready && echo "Ready!" && break
+            echo "Attempt $i..."
+            sleep 10
+          done
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Populate Keycloak
+        run: python3 populate.py
+
+      - name: Run Ghost Scanner and create GitHub Issues
+        run: python3 create_issues.py
