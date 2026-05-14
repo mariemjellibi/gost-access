@@ -71,7 +71,7 @@ jobs:
         run: |
           safety check --output text || true
 
-  iam-ghost-scan:
+  hf-iam-ghost-scan:
       name: Scheduled IAM Ghost Scan + Auto Remediation
       runs-on: ubuntu-latest
       if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
